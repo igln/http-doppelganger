@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -21,9 +22,17 @@ type HTTPProxy struct {
 }
 
 func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
+	useHTTPS := cfg.GitLab.UseHTTPS
+	scheme := "http"
+	targetHost := cfg.GitLabHTTPAddr()
+	if useHTTPS {
+		scheme = "https"
+		targetHost = cfg.GitLabHTTPSAddr()
+	}
+
 	targetURL := &url.URL{
-		Scheme: "http",
-		Host:   cfg.GitLabHTTPAddr(),
+		Scheme: scheme,
+		Host:   targetHost,
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
@@ -101,7 +110,7 @@ func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
 		w.Write([]byte("Bad Gateway"))
 	}
 
-	proxy.Transport = &http.Transport{
+	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
@@ -112,6 +121,14 @@ func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
 		ExpectContinueTimeout: 1 * time.Second,
 		ResponseHeaderTimeout: 0,
 	}
+	if useHTTPS {
+		transport.TLSClientConfig = &tls.Config{
+			ServerName: gitlabHost,
+		}
+	}
+	proxy.Transport = transport
+
+	log.Printf("HTTP proxy configured: upstream=%s://%s", targetURL.Scheme, targetURL.Host)
 
 	return &HTTPProxy{
 		config:       cfg,
@@ -135,9 +152,19 @@ func isWebSocketRequest(r *http.Request) bool {
 }
 
 func (p *HTTPProxy) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	targetAddr := p.config.GitLabHTTPAddr()
+	targetAddr := p.config.GitLabUpstreamAddr()
 
-	targetConn, err := net.DialTimeout("tcp", targetAddr, 30*time.Second)
+	var targetConn net.Conn
+	var err error
+
+	if p.config.GitLab.UseHTTPS {
+		dialer := &net.Dialer{Timeout: 30 * time.Second}
+		targetConn, err = tls.DialWithDialer(dialer, "tcp", targetAddr, &tls.Config{
+			ServerName: p.config.GitLab.Host,
+		})
+	} else {
+		targetConn, err = net.DialTimeout("tcp", targetAddr, 30*time.Second)
+	}
 	if err != nil {
 		log.Printf("WebSocket dial error: %v", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)

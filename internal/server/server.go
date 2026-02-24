@@ -81,8 +81,8 @@ func (s *Server) Run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("HTTP proxy listening on %s -> %s",
-			s.config.Proxy.HTTPListen, s.config.GitLabHTTPAddr())
+		log.Printf("HTTP proxy listening on %s -> %s://%s",
+			s.config.Proxy.HTTPListen, s.config.GitLabUpstreamScheme(), s.config.GitLabUpstreamAddr())
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- fmt.Errorf("HTTP server error: %w", err)
 		}
@@ -132,7 +132,7 @@ func (s *Server) Run() error {
 	}()
 
 	log.Printf("GitLab proxy started")
-	log.Printf("  HTTP:  %s -> %s", s.config.Proxy.HTTPListen, s.config.GitLabHTTPAddr())
+	log.Printf("  HTTP:  %s -> %s://%s", s.config.Proxy.HTTPListen, s.config.GitLabUpstreamScheme(), s.config.GitLabUpstreamAddr())
 	if s.config.TLS.Enabled {
 		log.Printf("  HTTPS: %s -> %s (TLS termination with cert: %s)",
 			s.config.Proxy.HTTPSListen, s.config.GitLabHTTPAddr(), s.config.TLS.CertFile)

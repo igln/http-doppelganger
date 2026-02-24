@@ -14,6 +14,7 @@ type GitLabConfig struct {
 	SSHPort     int      `yaml:"ssh_port"`
 	ExternalURL string   `yaml:"external_url"`
 	RewriteURLs []string `yaml:"rewrite_urls"`
+	UseHTTPS    bool     `yaml:"use_https"`
 }
 
 type ProxyConfig struct {
@@ -101,4 +102,18 @@ func (c *Config) GitLabHTTPSAddr() string {
 
 func (c *Config) GitLabSSHAddr() string {
 	return fmt.Sprintf("%s:%d", c.GitLab.Host, c.GitLab.SSHPort)
+}
+
+func (c *Config) GitLabUpstreamAddr() string {
+	if c.GitLab.UseHTTPS {
+		return c.GitLabHTTPSAddr()
+	}
+	return c.GitLabHTTPAddr()
+}
+
+func (c *Config) GitLabUpstreamScheme() string {
+	if c.GitLab.UseHTTPS {
+		return "https"
+	}
+	return "http"
 }
