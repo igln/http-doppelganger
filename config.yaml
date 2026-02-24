@@ -1,0 +1,36 @@
+# GitLab Proxy Configuration
+
+gitlab:
+  # The hostname or IP address of your self-hosted GitLab instance
+  host: "gitlab.internal.company.com"
+  
+  # GitLab HTTP port (default: 80)
+  http_port: 80
+  
+  # GitLab HTTPS port (default: 443)
+  https_port: 443
+  
+  # GitLab SSH port (default: 22)
+  ssh_port: 22
+
+proxy:
+  # Listen address for HTTP traffic (default: ":80")
+  http_listen: ":80"
+  
+  # Listen address for HTTPS traffic (default: ":443")
+  https_listen: ":443"
+  
+  # Listen address for SSH traffic (default: ":22")
+  ssh_listen: ":22"
+
+# TLS configuration for Let's Encrypt certificates
+# Set enabled: true after running init-letsencrypt.sh
+tls:
+  enabled: false
+  cert_file: "/etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem"
+  key_file: "/etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem"
+  domain: "YOUR_DOMAIN"
+
+logging:
+  # Log level: debug, info, warn, error (default: "info")
+  level: "info"
