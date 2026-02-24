@@ -26,9 +26,15 @@ func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
-	originalDirector := proxy.Director
+	gitlabHost := cfg.GitLab.Host
+	gitlabHTTPAddr := cfg.GitLabHTTPAddr()
+	gitlabHTTPSAddr := cfg.GitLabHTTPSAddr()
+
 	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
+		originalHost := req.Host
+
+		req.URL.Scheme = targetURL.Scheme
+		req.URL.Host = targetURL.Host
 
 		if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
 			if prior := req.Header.Get("X-Forwarded-For"); prior != "" {
@@ -37,12 +43,34 @@ func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
 			req.Header.Set("X-Forwarded-For", clientIP)
 		}
 
-		req.Header.Set("X-Forwarded-Host", req.Host)
+		req.Header.Set("X-Forwarded-Host", originalHost)
 		req.Header.Set("X-Forwarded-Proto", "http")
 		req.Header.Set("X-Real-IP", strings.Split(req.RemoteAddr, ":")[0])
+
+		req.Host = gitlabHost
 	}
 
 	proxy.ModifyResponse = func(resp *http.Response) error {
+		originalHost := resp.Request.Header.Get("X-Forwarded-Host")
+		if originalHost == "" {
+			return nil
+		}
+
+		location := resp.Header.Get("Location")
+		if location != "" {
+			newLocation := rewriteLocation(location, gitlabHost, gitlabHTTPAddr, gitlabHTTPSAddr, originalHost, "http")
+			if newLocation != location {
+				resp.Header.Set("Location", newLocation)
+				log.Printf("Rewrote Location: %s -> %s", location, newLocation)
+			}
+		}
+
+		for _, cookie := range resp.Cookies() {
+			if cookie.Domain == gitlabHost {
+				cookie.Domain = extractHost(originalHost)
+			}
+		}
+
 		return nil
 	}
 
@@ -110,6 +138,7 @@ func (p *HTTPProxy) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer clientConn.Close()
 
+	r.Host = p.config.GitLab.Host
 	if err := r.Write(targetConn); err != nil {
 		log.Printf("WebSocket write request error: %v", err)
 		return
@@ -139,4 +168,44 @@ func copyBidirectional(client, target net.Conn) {
 
 	<-done
 	<-done
+}
+
+func rewriteLocation(location, gitlabHost, gitlabHTTPAddr, gitlabHTTPSAddr, proxyHost, proxyScheme string) string {
+	parsed, err := url.Parse(location)
+	if err != nil {
+		return location
+	}
+
+	if parsed.Host == "" {
+		return location
+	}
+
+	locationHost := parsed.Host
+
+	if locationHost == gitlabHost || locationHost == gitlabHTTPAddr || locationHost == gitlabHTTPSAddr {
+		parsed.Host = proxyHost
+		if proxyScheme != "" && (parsed.Scheme == "http" || parsed.Scheme == "https") {
+			parsed.Scheme = proxyScheme
+		}
+		return parsed.String()
+	}
+
+	hostOnly := extractHost(locationHost)
+	if hostOnly == gitlabHost {
+		parsed.Host = proxyHost
+		if proxyScheme != "" && (parsed.Scheme == "http" || parsed.Scheme == "https") {
+			parsed.Scheme = proxyScheme
+		}
+		return parsed.String()
+	}
+
+	return location
+}
+
+func extractHost(hostPort string) string {
+	host, _, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return hostPort
+	}
+	return host
 }
