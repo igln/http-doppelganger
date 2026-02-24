@@ -8,10 +8,12 @@ import (
 )
 
 type GitLabConfig struct {
-	Host      string `yaml:"host"`
-	HTTPPort  int    `yaml:"http_port"`
-	HTTPSPort int    `yaml:"https_port"`
-	SSHPort   int    `yaml:"ssh_port"`
+	Host        string   `yaml:"host"`
+	HTTPPort    int      `yaml:"http_port"`
+	HTTPSPort   int      `yaml:"https_port"`
+	SSHPort     int      `yaml:"ssh_port"`
+	ExternalURL string   `yaml:"external_url"`
+	RewriteURLs []string `yaml:"rewrite_urls"`
 }
 
 type ProxyConfig struct {

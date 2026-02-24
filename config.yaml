@@ -2,7 +2,7 @@
 
 gitlab:
   # The hostname or IP address of your self-hosted GitLab instance
-  host: "gitlab.internal.company.com"
+  host: "gitlab.internal.example.com"
   
   # GitLab HTTP port (default: 80)
   http_port: 80
@@ -12,6 +12,17 @@ gitlab:
   
   # GitLab SSH port (default: 22)
   ssh_port: 22
+
+  # GitLab's external_url - the URL GitLab thinks it's running on
+  # Set this if GitLab redirects to a different URL than gitlab.host
+  # This is used to rewrite redirects and URLs in responses
+  external_url: ""
+  
+  # Additional URLs to rewrite (optional)
+  # All these URLs will be replaced with your proxy domain in responses
+  rewrite_urls: []
+  #   - "https://old-gitlab.example.com"
+  #   - "http://gitlab-internal:8080"
 
 proxy:
   # Listen address for HTTP traffic (default: ":80")
@@ -24,7 +35,8 @@ proxy:
   ssh_listen: ":22"
 
 # TLS configuration for Let's Encrypt certificates
-# Set enabled: true after running init-letsencrypt.sh
+# Set enabled: false for TLS passthrough mode (GitLab handles TLS)
+# Set enabled: true for TLS termination mode (proxy handles TLS with Let's Encrypt)
 tls:
   enabled: false
   cert_file: "/etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem"

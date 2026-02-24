@@ -13,9 +13,11 @@ echo "Domain: $DOMAIN"
 echo "Email: $EMAIL"
 echo ""
 
-if docker volume ls | grep -q "http-doppelganger_letsencrypt"; then
+PROJECT_NAME=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g')
+
+if docker volume ls | grep -q "${PROJECT_NAME}_letsencrypt"; then
     echo "Checking for existing certificates..."
-    if docker run --rm -v http-doppelganger_letsencrypt:/etc/letsencrypt alpine test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem"; then
+    if docker run --rm -v ${PROJECT_NAME}_letsencrypt:/etc/letsencrypt alpine test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem"; then
         echo "Certificate already exists for $DOMAIN"
         read -p "Do you want to force renewal? (y/N) " -n 1 -r
         echo
@@ -30,7 +32,7 @@ echo ""
 echo "Step 1: Starting temporary nginx for ACME challenge..."
 docker-compose -f docker-compose.init.yml up -d nginx-init
 
-sleep 3
+sleep 5
 
 echo ""
 echo "Step 2: Requesting certificate from Let's Encrypt..."
@@ -42,22 +44,26 @@ docker-compose -f docker-compose.init.yml down
 
 echo ""
 echo "Step 4: Updating config.yaml with TLS settings..."
-if grep -q "tls:" config.yaml; then
-    echo "TLS section already exists in config.yaml"
-else
-    cat >> config.yaml << EOF
 
-tls:
-  enabled: true
-  cert_file: "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
-  key_file: "/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
-  domain: "${DOMAIN}"
-EOF
-    echo "TLS configuration added to config.yaml"
+if grep -q "enabled: false" config.yaml; then
+    sed -i.bak "s|enabled: false|enabled: true|g" config.yaml
+    sed -i.bak "s|YOUR_DOMAIN|${DOMAIN}|g" config.yaml
+    rm -f config.yaml.bak
+    echo "TLS configuration updated in config.yaml"
+elif grep -q "YOUR_DOMAIN" config.yaml; then
+    sed -i.bak "s|YOUR_DOMAIN|${DOMAIN}|g" config.yaml
+    rm -f config.yaml.bak
+    echo "Domain updated in config.yaml"
+else
+    echo "TLS section already configured in config.yaml"
 fi
 
 echo ""
 echo "=== Certificate initialization complete! ==="
+echo ""
+echo "IMPORTANT: Make sure to update config.yaml with your GitLab settings:"
+echo "  - gitlab.host: Your internal GitLab hostname"
+echo "  - gitlab.external_url: GitLab's configured external_url (for URL rewriting)"
 echo ""
 echo "You can now start the GitLab proxy with:"
 echo "  docker-compose up -d"

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -16,6 +17,7 @@ import (
 type HTTPProxy struct {
 	config       *config.Config
 	reverseProxy *httputil.ReverseProxy
+	rewriter     *URLRewriter
 }
 
 func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
@@ -29,6 +31,22 @@ func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
 	gitlabHost := cfg.GitLab.Host
 	gitlabHTTPAddr := cfg.GitLabHTTPAddr()
 	gitlabHTTPSAddr := cfg.GitLabHTTPSAddr()
+
+	var rewriter *URLRewriter
+	if len(cfg.GitLab.RewriteURLs) > 0 || cfg.GitLab.ExternalURL != "" {
+		var urlsToRewrite []string
+		if cfg.GitLab.ExternalURL != "" {
+			urlsToRewrite = append(urlsToRewrite, cfg.GitLab.ExternalURL)
+		}
+		urlsToRewrite = append(urlsToRewrite, cfg.GitLab.RewriteURLs...)
+
+		proxyURL := fmt.Sprintf("http://%s", cfg.TLS.Domain)
+		if cfg.TLS.Domain == "" {
+			proxyURL = fmt.Sprintf("http://%s", gitlabHost)
+		}
+		rewriter = NewURLRewriter(urlsToRewrite, proxyURL)
+		log.Printf("HTTP URL rewriter configured: %v -> %s", urlsToRewrite, proxyURL)
+	}
 
 	proxy.Director = func(req *http.Request) {
 		originalHost := req.Host
@@ -53,21 +71,24 @@ func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		originalHost := resp.Request.Header.Get("X-Forwarded-Host")
 		if originalHost == "" {
-			return nil
+			originalHost = gitlabHost
 		}
 
 		location := resp.Header.Get("Location")
 		if location != "" {
 			newLocation := rewriteLocation(location, gitlabHost, gitlabHTTPAddr, gitlabHTTPSAddr, originalHost, "http")
+			if rewriter != nil {
+				newLocation = string(rewriter.RewriteBody([]byte(newLocation)))
+			}
 			if newLocation != location {
 				resp.Header.Set("Location", newLocation)
 				log.Printf("Rewrote Location: %s -> %s", location, newLocation)
 			}
 		}
 
-		for _, cookie := range resp.Cookies() {
-			if cookie.Domain == gitlabHost {
-				cookie.Domain = extractHost(originalHost)
+		if rewriter != nil {
+			if err := rewriter.RewriteResponse(resp); err != nil {
+				log.Printf("Body rewrite error: %v", err)
 			}
 		}
 
@@ -95,6 +116,7 @@ func NewHTTPProxy(cfg *config.Config) *HTTPProxy {
 	return &HTTPProxy{
 		config:       cfg,
 		reverseProxy: proxy,
+		rewriter:     rewriter,
 	}
 }
 
